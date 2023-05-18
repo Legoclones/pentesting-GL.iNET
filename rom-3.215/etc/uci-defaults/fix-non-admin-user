@@ -1,0 +1,6 @@
+uci -q get glconfig.user > /dev/null || {
+uci batch <<-EOF
+	set glconfig.user=login
+	commit glconfig
+EOF
+}

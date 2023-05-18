@@ -1,0 +1,49 @@
+#!/bin/sh
+
+create()
+{
+	local LANIP=$(uci get network.lan.ipaddr)
+
+	iptables -N SIDEROUTER_INPUT 2>/dev/null
+	iptables -C INPUT -j SIDEROUTER_INPUT
+	[ ! "$?" = "0" ] && iptables -I INPUT -j SIDEROUTER_INPUT
+	iptables -F SIDEROUTER_INPUT 2>/dev/null
+	iptables -I SIDEROUTER_INPUT -j ACCEPT
+
+	iptables -N SIDEROUTER_FORWARD 2>/dev/null
+	iptables -C FORWARD -j SIDEROUTER_FORWARD
+	[ ! "$?" = "0" ] && iptables -I FORWARD -j SIDEROUTER_FORWARD
+	iptables -F SIDEROUTER_FORWARD 2>/dev/null
+	iptables -I SIDEROUTER_FORWARD -j ACCEPT
+	
+	[ -z "$LANIP" ] && return
+	iptables -t nat -N SIDEROUTER_PREROUTING 2>/dev/null
+	iptables -t nat -C PREROUTING -j SIDEROUTER_PREROUTING
+	[ ! "$?" = "0" ] && iptables -t nat -I PREROUTING -j SIDEROUTER_PREROUTING
+	iptables -t nat  -F SIDEROUTER_PREROUTING 2>/dev/null
+	iptables -t nat -I SIDEROUTER_PREROUTING  -p udp --dport 53 -j DNAT --to "$LANIP"
+	iptables -t nat -I SIDEROUTER_PREROUTING  -p tcp --dport 53 -j DNAT --to "$LANIP"
+}
+
+remove()
+{
+	iptables -t nat -D PREROUTING -j SIDEROUTER_PREROUTING 2>/dev/null
+	iptables -t nat  -F SIDEROUTER_PREROUTING 2>/dev/null
+	iptables -t nat -X SIDEROUTER_PREROUTING 2>/dev/null
+
+	iptables -D FORWARD -j SIDEROUTER_FORWARD 2>/dev/null
+	iptables -F SIDEROUTER_FORWARD 2>/dev/null
+	iptables -X SIDEROUTER_FORWARD 2>/dev/null
+
+	iptables -D INPUT -j SIDEROUTER_INPUT 2>/dev/null
+	iptables -F SIDEROUTER_INPUT 2>/dev/null
+	iptables -X SIDEROUTER_INPUT 2>/dev/null
+}
+
+enabled=`uci get siderouter.global.enabled`
+if [ "$enabled" = "1" ];then
+	create
+else
+	remove
+fi
+

@@ -1,0 +1,12 @@
+#!/bin/sh
+. /lib/functions/gl_util.sh
+
+ipv6_mode="$(uci get glipv6.lan.mode)"
+
+if [ "$ACTION" = remove -a "$INTERFACE" = tun0 -a "$ipv6_mode" != relay ];then
+        ip -6 route del ::/0 dev tun0 metric 1
+fi
+
+if [ "$ACTION" = add -a "$INTERFACE" = tun0 -a "$ipv6_mode" != relay ];then
+        ip -6 route add ::/0 dev tun0 metric 1
+fi

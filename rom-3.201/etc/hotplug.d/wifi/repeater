@@ -1,0 +1,11 @@
+[ "$ACTION" = "apcli_down" ] || exit 0
+
+logger -t "apcli" "$ifname down"
+
+wifname=$(uci -q get wireless.sta.ifname) || exit 0
+
+[ "$wifname" = "$ifname" ] || exit 0
+
+. /lib/netifd/netifd-proto.sh
+
+proto_kill_command wwan

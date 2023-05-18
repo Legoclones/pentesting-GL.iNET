@@ -1,0 +1,87 @@
+#!/bin/sh  /etc/rc.common
+
+START=70
+
+set_data_centric()
+{
+	local bus="$1"
+	[ ! -d "/etc/log" ] && mkdir /etc/log
+	[ ! -e "/tmp/sim_status" -o ! -e "/tmp/sim_type" ] && /usr/bin/check_verizon
+
+	#set auto ture
+	autosel=`gl_modem -B $bus AT 'AT+QMBNCFG="AutoSel"' | grep QMBNCFG |  awk -F ',' '{print $2}' | tr -cd "[0-9]"`
+	[ $autosel == 0 ] && gl_modem -B $bus AT 'AT+QMBNCFG="AutoSel",1'
+
+	manuf="$(gl_modem -B $bus AT AT+GMI|grep Quectel)"
+	[ -z "$manuf" ] && manuf="$(gl_modem -B $bus AT AT+GMI|grep Quectel)"
+	[ -z "$manuf" ] && return
+
+	old_state="$(gl_modem -B $bus AT AT+QNVFR=\"/nv/item_files/modem/mmode/ue_usage_setting\"|grep QNVFR:|awk -F ' ' '{print $2|}')" 
+	[ -z "$old_state" ] && { #try again
+		sleep 1
+		old_state="$(gl_modem -B $bus AT AT+QNVFR=\"/nv/item_files/modem/mmode/ue_usage_setting\"|grep QNVFR:|awk -F ' ' '{print $2|}')" 
+	}
+	[ -z "$old_state" ] && return
+	[ "$old_state" = "00" ] && {
+		ret="$(gl_modem -B $bus AT AT+QNVFW=\"/nv/item_files/modem/mmode/ue_usage_setting\",01|grep OK)"
+		[ -z  "$ret" ] && {
+			sleep 1
+			ret="$(gl_modem -B $bus AT AT+QNVFW=\"/nv/item_files/modem/mmode/ue_usage_setting\",01|grep OK)"
+		}
+		[ -z "$ret" ] && return
+		ret="$(gl_modem -B $bus AT AT+CFUN=1,1|grep OK)"
+		[ -z  "$ret" ] && {
+			sleep 1
+			ret="$(gl_modem -B $bus AT AT+CFUN=1,1|grep OK)"
+		}
+		[ -n "ret" ] && {
+			logger "Compatible AT&T data only device,modem applying data_centric settings, and waiting for 15S, this setting only needs to be run once"
+			sleep 15 #wait setting apply
+		}
+
+	}
+}
+
+modem_auto_connect()
+{
+	local bus="$1"
+	[ -z "$bus" ] && return 1
+	local iface=modem_"$(echo "$bus"|sed 's/-/_/g'|sed 's/\./_/g')"
+	local sim="$(gl_modem sim-status)"
+
+	[ -z "$(uci -q get network.$iface)" ] && {
+		enable=`uci -q get glconfig.modem.enable_log`
+		[ "$sim" = "READY" ] && gl_modem -B "$bus" connect-auto &
+		[ "$sim" != "READY" ] && {
+			/usr/bin/ensure_autoconnect &
+			[ "$enable" = "1" ] && echo `date` "=== first autoconnect fail" >> /etc/log/verizon_error.log
+		}
+	}
+}
+
+start()
+{
+	. /lib/functions/gl_util.sh
+	model=$(get_model)
+	case "$model" in
+		"xe300")
+			set_data_centric "1-1.2"
+			modem_auto_connect "1-1.2"
+			;;
+		"mifi"|\
+		"x750"|\
+		"e750")
+			set_data_centric "1-1.2"
+			;;
+		"x300b"|\
+		"ap1300")
+			set_data_centric "1-1"
+			;;
+		"x1200")
+			set_data_centric "1-1.2"
+			set_data_centric "2-1.2"
+			;;
+		*)
+	esac
+	gl_modem thermal
+}

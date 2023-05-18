@@ -1,0 +1,7 @@
+config rtty general
+	option  interface   'lan'
+	option  id          'ddns'
+	option  ssl         1
+	option  ssh_en      1
+	option  web_en      1
+	option  verbose     1

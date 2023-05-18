@@ -1,0 +1,13 @@
+#!/bin/sh /etc/rc.common
+
+START=16
+
+start(){
+	enable=$(uci -q  get glconfig.general.safe_mode)
+	[ "$enable" = 1 ] && {
+		mkdir -p /tmp/dnsmasq.d/
+		echo conntrack  >/tmp/dnsmasq.d/safe_mode_conntrack
+	}
+}
+
+

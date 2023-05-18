@@ -1,0 +1,19 @@
+{
+    "operator": "Visible",
+    "device": "",
+    "service": "",
+    "apn": "",
+    "mtu": "",
+    "pincode": "",
+    "dialnumber": "",
+    "username": "",
+    "password": "",
+    "auth": "",
+    "at_cmd": [
+        "AT+CGDCONT=1,\"IPV4V6\",\"VSBLIMS\"",
+        "AT+CGDCONT=2,\"IPV4V6\",\"VSBLADMIN\"",
+        "AT+CGDCONT=4,\"IPV4V6\",\"VSBLAPP\"",
+        "AT+CFUN=0",
+        "AT+CFUN=1"
+    ]
+}

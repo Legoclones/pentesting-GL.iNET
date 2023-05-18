@@ -1,0 +1,5 @@
+uci -q get network.wan6 > /dev/null && exit 0
+
+uci set network.wan6=interface
+uci set network.wan6.proto=dhcpv6
+uci commit network

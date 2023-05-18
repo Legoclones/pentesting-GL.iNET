@@ -1,0 +1,15 @@
+#!/bin/sh
+
+modem_bus=`uci get glconfig.modem.bus | sed 's/-/_/g' | sed 's/\./_/g' 2>/dev/null`
+
+wan_interface="wan wwan tethering modem_${modem_bus}"
+wan_status=""
+for interface in $wan_interface
+do
+    status=`ifstatus $interface | jsonfilter -e '@.up' 2>/dev/null`
+    if [ "$status" = "true" ];then
+        wan_status="$wan_status $interface"
+    fi
+done
+
+echo -e "$wan_status\c"

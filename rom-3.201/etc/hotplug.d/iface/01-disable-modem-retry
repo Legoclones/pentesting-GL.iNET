@@ -1,0 +1,5 @@
+[ -n "$(echo $INTERFACE|grep modem)" ] && [ "ifup-failed" = "$ACTION" ] && {
+	. /lib/netifd/netifd-proto.sh
+	#disable modem auto retry,waiting gl-monitor try again
+	proto_block_restart "$INTERFACE"
+}

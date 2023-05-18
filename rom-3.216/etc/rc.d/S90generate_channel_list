@@ -1,0 +1,210 @@
+#!/bin/sh /etc/rc.common
+# Copyright (C) 2006-2011 OpenWrt.org
+
+. /lib/functions/gl_util.sh
+
+START=90
+
+mt76x8_channel_list_init() {
+	rm /tmp/2G_channel 2>/dev/null
+	region=$(uci get wireless.mt7628.region)
+	case $region in
+	"0")
+		for i in $(seq 1 11); do
+    		echo $i >> /tmp/2G_channel
+		done
+		;;
+	"1")
+		for i in $(seq 1 13); do
+    		echo $i >> /tmp/2G_channel
+		done
+		;;
+	"2")
+		for i in $(seq 10 11); do
+    		echo $i >> /tmp/2G_channel
+		done		
+		;;
+	"3")
+		for i in $(seq 10 13); do
+    		echo $i >> /tmp/2G_channel
+		done
+		;;
+	"4")
+		echo '14' >> /tmp/2G_channel
+		;;
+	"5")
+		for i in $(seq 1 14); do
+    		echo $i >> /tmp/2G_channel
+		done
+		;;
+	"6")
+		for i in $(seq 3 9); do
+    		echo $i >> /tmp/2G_channel
+		done
+		;;
+	"7")
+		for i in $(seq 5 13); do
+    		echo $i >> /tmp/2G_channel
+		done
+		;;
+	*)
+		for i in $(seq 1 11); do
+    		echo $i >> /tmp/2G_channel
+		done		
+		;;
+	esac
+}
+
+mt7621_channel_list_init() {
+	rm /tmp/2G_channel 2>/dev/null
+	rm /tmp/5G_channel 2>/dev/null
+
+	region=$(uci get wireless.mt7615e2.region)
+	case $region in
+	"0")
+		for i in $(seq 1 11); do
+    		echo $i >> /tmp/2G_channel
+		done
+		;;
+	"1")
+		for i in $(seq 1 13); do
+    		echo $i >> /tmp/2G_channel
+		done
+		;;
+	"2")
+		for i in $(seq 10 11); do
+    		echo $i >> /tmp/2G_channel
+		done		
+		;;
+	"3")
+		for i in $(seq 10 13); do
+    		echo $i >> /tmp/2G_channel
+		done
+		;;
+	"4")
+		echo '14' >> /tmp/2G_channel
+		;;
+	"5")
+		for i in $(seq 1 14); do
+    		echo $i >> /tmp/2G_channel
+		done
+		;;
+	"6")
+		for i in $(seq 3 9); do
+    		echo $i >> /tmp/2G_channel
+		done
+		;;
+	"7")
+		for i in $(seq 5 13); do
+    		echo $i >> /tmp/2G_channel
+		done
+		;;
+	*)
+		for i in $(seq 1 11); do
+    		echo $i >> /tmp/2G_channel
+		done		
+		;;
+	esac
+
+	aregion=$(uci get wireless.mt7615e5.aregion)
+	case $aregion in
+	"0")
+		for i in 36 40 44 48 52 56 60 64 149 153 157 161 165; do
+    		echo $i >> /tmp/5G_channel
+		done
+		;;
+	"1")
+		for i in 36 40 44 48 52 56 60 64 100 104 108 112 116 120 124 128 132 136 140; do
+    		echo $i >> /tmp/5G_channel
+		done
+		;;
+	"2")
+		for i in 34 40 44 48 52 56 60 64; do
+    		echo $i >> /tmp/5G_channel
+		done		
+		;;
+	"3")
+		for i in 52 56 60 64 149 153 157 161; do
+    		echo $i >> /tmp/5G_channel
+		done
+		;;
+	"4")
+		for i in 149 153 157 161 165; do
+    		echo $i >> /tmp/5G_channel
+		done
+		;;
+	"5")
+		for i in 149 153 157 161; do
+    		echo $i >> /tmp/5G_channel
+		done
+		;;
+	"6")
+		for i in 36 40 44 48; do
+    		echo $i >> /tmp/5G_channel
+		done
+		;;
+	"7")
+		for i in 36 40 44 48 52 56 60 64 100 104 108 112 116 120 124 128 132 136 140 149 153 157 161 165; do
+    		echo $i >> /tmp/5G_channel
+		done
+		;;
+	"8")
+		for i in 52 56 60 64; do
+    		echo $i >> /tmp/5G_channel
+		done
+		;;
+	"9")
+		for i in 36 40 44 48 52 56 60 64 100 104 108 112 116 132 136 140 149 153 157 161 165; do
+    		echo $i >> /tmp/5G_channel
+		done		
+		;;
+	"10")
+		for i in 36 40 44 48 149 153 157 161; do
+    		echo $i >> /tmp/5G_channel
+		done
+		;;
+	"11")
+		for i in 36 40 44 48 52 56 60 64 100 104 108 112 116 120 149 153 157 161; do
+    		echo $i >> /tmp/5G_channel
+		done
+		;;
+	"12")
+		for i in 36 40 44 48 52 56 60 64 100 104 108 112 116 120 124 128 132 136 140 144; do
+    		echo $i >> /tmp/5G_channel
+		done
+		;;
+	"13")
+		for i in 36 40 44 48 52 56 60 64 100 104 108 112 116 120 124 128 132 136 140 144 149 153 157 161 165; do
+    		echo $i >> /tmp/5G_channel
+		done
+		;;
+	"14")
+		for i in 36 40 44 48 52 56 60 64 100 104 108 112 116 132 136 140 144 149 153 157 161 165; do
+    		echo $i >> /tmp/5G_channel
+		done
+		;;
+	*)
+		for i in 36 40 44 48 149 153 157 161; do
+    		echo $i >> /tmp/5G_channel
+		done		
+		;;
+	esac
+}
+
+start() {
+	local model
+
+	model=$(get_model)
+
+	if [ "$model" = "b1300" -o "$model" = "s1300" -o "$model" = "b2200" ]; then
+		/usr/sbin/b1300_misc_func.sh get_channels wifi0 > /tmp/2G_channel
+		/usr/sbin/b1300_misc_func.sh get_channels wifi1 > /tmp/5G_channel
+	elif [ "$model" = "mt300n-v2" -o "$model" = "n300" -o "$model" = "vixmini" ]; then
+		mt76x8_channel_list_init
+	elif [ "$model" = "mt1300" ]; then
+		mt7621_channel_list_init
+	else
+		iw list|grep ' 2..* MHz'|grep -v disabled|grep -v IR|awk -F '[][]' '{print $2}' | grep -v "^$" > /tmp/2G_channel
+		iw list|grep ' 5..* MHz'|grep -v disabled|grep -v radar|awk -F '[][]' '{print $2}' | grep -v "^$" > /tmp/5G_channel
+	fi
+}

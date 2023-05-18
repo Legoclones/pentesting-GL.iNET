@@ -1,0 +1,14 @@
+Package: ssmtp
+Version: 2.64-7
+Depends: libc, libopenssl1.1
+Source: feeds/packages/mail/ssmtp
+SourceName: ssmtp
+License: GPL-2.0-or-later
+Section: mail
+Maintainer: Dirk Brenken <dev@brenken.org>
+Architecture: mips_24kc
+Installed-Size: 10232
+Description:  A secure, effective and simple way of getting mail off a system to your mail hub.
+ Mail is simply forwarded to the configured mailhost, no daemons running in the background.
+ Extremely easy configuration.
+ 

@@ -1,0 +1,8 @@
+#!/bin/sh
+. /lib/functions/gl_util.sh
+
+model=$(get_model)
+
+if [ "$model" = "mt1300" -a "$ACTION" = "add" -a "$INTERFACE" = "wwan0" ];then
+	echo Y > /sys/class/net/wwan0/qmi/raw_ip	
+fi

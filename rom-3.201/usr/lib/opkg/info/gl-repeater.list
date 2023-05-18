@@ -1,0 +1,4 @@
+/usr/bin/gl_health
+/etc/hotplug.d/wifi/repeater
+/etc/init.d/gl_health
+/etc/init.d/gl_ssids

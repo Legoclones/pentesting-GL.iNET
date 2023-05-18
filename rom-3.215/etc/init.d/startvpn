@@ -1,0 +1,349 @@
+#!/bin/sh /etc/rc.common
+
+. /lib/functions/gl_util.sh
+
+START=99
+
+model=$(get_model)
+guest_exist=$(check_guest_network_exist)
+
+lan2wan_forwarding() {
+	local src
+	local dest
+	local action="$1"
+	local sections=$(uci show firewall | sed -n 's/\(.*\)=forwarding/\1/p')
+
+	[ -n "$sections" ] || return 1
+
+	for section in $sections; do
+		src=$(uci get $section.src)
+		dest=$(uci get $section.dest)
+
+		if [ -n "$guest_exist" ];then
+			#add by wellnw
+			if [ "$src" = "guestzone" -a "$dest" = "wan" ];then
+				if [ "$action" = "enable" ];then
+					uci set $section.enabled="1"
+				elif [ "$action" = "disable" ]; then
+					uci set $section.enabled="0"
+				else
+					echo "Please add options: enable|disable"
+				fi
+			fi
+		fi
+	
+		[ -n "$src" -a "$src" = "lan" -a -n "$dest" -a "$dest" = "wan" ] || continue
+
+		echo "well"
+		if [ "$action" = "enable" ]; then
+			uci set $section.enabled="1"
+		elif [ "$action" = "disable" ]; then
+			uci set $section.enabled="0"
+		else
+			echo "Please add options: enable|disable"
+		fi
+	done
+}
+
+set_ovpn_config() {
+	local action="$1"
+	local access=$(uci get glconfig.openvpn.access)
+
+	if [ "$action" = "add" ]; then
+		vpn_zone_exist=$(uci get firewall.vpn_zone)
+		[ -n "$vpn_zone_exist" ] && return
+		
+		uci set firewall.vpn_zone=zone
+		uci set firewall.vpn_zone.name='ovpn'
+		uci set firewall.vpn_zone.input=$access 
+		uci set firewall.vpn_zone.forward='DROP'
+		uci set firewall.vpn_zone.output='ACCEPT'  
+		uci set firewall.vpn_zone.network='ovpn'
+		uci set firewall.vpn_zone.masq='1'             
+		uci set firewall.vpn_zone.mtu_fix='1'
+		uci set firewall.vpn_zone.masq6='1'
+		uci set firewall.forwarding_vpn1='forwarding' 
+		uci set firewall.forwarding_vpn1.dest='ovpn'
+		uci set firewall.forwarding_vpn1.src='lan'
+		if [ -n "$tap" ];then
+			uci set firewall.vpn_zone.device='tap0'
+		else
+			uci set firewall.vpn_zone.device='tun0'
+		fi
+
+		if [ -n "$guest_exist" ];then
+			#add by wellnw
+			uci set firewall.forwarding_guest_ovpn='forwarding' 
+			uci set firewall.forwarding_guest_ovpn.dest='ovpn'
+			uci set firewall.forwarding_guest_ovpn.src='guestzone'         
+		fi
+		uci set firewall.forwarding_lan_ovpn='forwarding'
+		uci set firewall.forwarding_lan_ovpn.src='ovpn'
+		uci set firewall.forwarding_lan_ovpn.dest='lan'
+		[ "$access" != "ACCEPT" ] && {
+			uci set firewall.forwarding_lan_ovpn.enabled='0'
+		}
+	elif [ "$action" = "del" ]; then
+		uci delete firewall.vpn_zone
+		uci delete firewall.forwarding_vpn1
+		uci delete firewall.forwarding_lan_ovpn
+		if [ -n "$guest_exist" ];then
+			uci delete firewall.forwarding_guest_ovpn
+		fi
+	else
+		echo "Please add options: add|del"
+	fi
+}
+
+ovpn_firewall_start() {
+	set_ovpn_config add
+	lan2wan_forwarding disable
+
+	uci commit firewall
+	/etc/init.d/firewall reload
+	# flush old connecting
+	echo " "  >/proc/net/nf_conntrack
+}
+
+ovpn_firewall_stop() {
+	set_ovpn_config del
+	lan2wan_forwarding enable
+
+	uci commit firewall
+	/etc/init.d/firewall reload &
+}
+
+clear_vpn_dns() {
+        uci set dhcp.@dnsmasq[0].resolvfile='/tmp/resolv.conf.auto'
+        uci commit dhcp
+        /etc/init.d/dnsmasq restart
+}
+update_qos_rule()
+{
+	traffic=`uci get glconfig.traffic_control.enable 2>/dev/null`
+	qosflag=`cat /etc/config/glqos 2>/dev/null`
+	if [ "$traffic" = "1" -a "$qosflag" != "" ];then
+		/etc/init.d/glqos restart
+	fi
+}
+
+start() {
+	local ip
+	local host
+	local pre_host
+	
+	/etc/init.d/openvpn disable
+	enabled=$(uci get glconfig.openvpn.enable)
+	[ -z "$enabled" -o "$enabled" = "0" ] && return;
+
+	ovpn=$(uci get glconfig.openvpn.ovpn)
+	[ -n "$ovpn" ] || return
+
+	host=$(grep "^remote " "${ovpn}" 2>/dev/null | awk '{print $2}')
+	[ -n "$host" ] && {
+		pre_host=$(uci get glconfig.openvpn.host)
+		ip=$(resolveip $host | egrep '[0-9]{1,3}(\.[0-9]{1,3}){3}' | head -n 1)
+		[ -n "$ip" -a "$ip" != "$pre_host" ] && {
+			uci set glconfig.openvpn.host="$ip"
+			uci commit glconfig
+		}
+	}
+	
+
+	tap=$(cat "$ovpn" |grep 'dev tap')
+	ifname=
+	ifname_lan=`uci get network.lan.ifname`
+	ifname_tap=`uci get network.lan.ifname | grep tap`
+	if [ -n "$tap" ]; then
+		ifname="tap0"
+
+		if [ -n "$ifname_tap" ];then
+				uci set network.lan.ifname="$ifname_lan"
+		else
+				uci set network.lan.ifname="$ifname_lan $ifname"
+		fi
+		uci set dhcp.lan.ignore='1'
+		uci commit dhcp
+		uci commit network
+	else
+		ifname="tun0"
+	fi
+
+
+	local interface=`uci -q get system.@led[1].dev`
+	[ "$model" = "mv1000" ] && [ "$interface" != "tun0" ] &&{
+        uci set system.@led[1].dev='tun0'
+        uci commit system
+
+        sleep 1
+
+        /etc/init.d/system restart >> /dev/null
+        /etc/init.d/led restart >> /dev/null
+    }
+
+
+
+	clear_vpn_dns
+
+	ovpn_firewall_start
+
+	ipv6=$(uci get glipv6.globals.enabled 2>/dev/null)
+	if [ "$ipv6" == "1" ];then
+		ipv6_config=""
+	else
+		ipv6_config="--pull-filter ignore ifconfig-ipv6 --pull-filter ignore route-ipv6"
+	fi
+
+	if [ "$model" = "mv1000" ];then
+		(sync;sleep 2;/etc/init.d/network restart; sleep 1; /usr/sbin/openvpn --config "$ovpn" --script-security 2 --dev $ifname --route-delay 2 --route-up /usr/bin/ovpn_check_route --remap-usr1 SIGHUP --writepid /var/run/ovpn_client.pidl $ipv6_config) &
+	elif [ "$model" = "b2200" -o "$model" = "s1300" -o "$model" = "b1300" -o "$model" = "ap1300" -o "$model" = "ax1800" ]; then
+		/usr/sbin/openvpn --config "$ovpn" --script-security 2 --dev $ifname --route-delay 2 --route-up /usr/bin/ovpn_check_route --remap-usr1 SIGHUP --writepid /var/run/ovpn_client.pid $ipv6_config &
+		if [ -n "$tap" -a "$model" != "ax1800" ];then
+			(sleep 1; /etc/init.d/network restart; sleep 5;ssdk_sh debug phy set 4 0 0x840;sleep 1;ssdk_sh debug phy set 4 0 0x1240) &
+		fi
+	elif [ "$model" = "mt1300" ];then
+		/usr/sbin/openvpn --config "$ovpn" --script-security 2 --dev $ifname --route-delay 2 --route-up /usr/bin/ovpn_check_route --remap-usr1 SIGHUP --writepid /var/run/ovpn_client.pid $ipv6_config &
+		if [ -n "$tap" ];then
+			(sleep 1; /etc/init.d/network restart) &
+			i=0;local tapst=$(ifconfig|grep tap)
+			while [ "$tapst" = "" ]
+			do
+				let "i++";sleep 1;tapst=$(ifconfig|grep tap)
+				logger -t startvpn "waited tap iface for $i second"
+				if [ "$i" = "15" ];then
+					break
+				fi
+			done
+			(sleep 1; ethtool -i eth0 1>/dev/null) &
+		fi
+	elif [ "$model" = "ar150" -o "$model" = "mifi" -o "$model" = "ar750" -o "$model" = "ar300m" -o "$model" = "x750" -o "$model" = "e750" -o "$model" = "s200"\
+	-o "$model" = "x300b" -o "$model" = "xe300" -o "$model" = "ar750s" -o "$model" = "x1200" ];then
+		/usr/sbin/openvpn --config "$ovpn" --script-security 2 --dev $ifname --route-delay 2 --route-up /usr/bin/ovpn_check_route --remap-usr1 SIGHUP --writepid /var/run/ovpn_client.pid $ipv6_config &
+		if [ -n "$tap" ];then
+			(sleep 1; /etc/init.d/network restart) &
+			i=0;local tapst=$(ifconfig|grep tap)
+			while [ "$tapst" = "" ]
+			do
+				let "i++";sleep 1;tapst=$(ifconfig|grep tap)
+				logger -t startvpn "waited tap iface for $i second"
+				if [ "$i" = "15" ];then
+					break
+				fi
+			done
+			(sleep 1; swconfig dev switch0 set reset; swconfig dev switch0 set apply) &
+		fi
+	elif [ "$model" = "sf1200" -o "$model" = "sft1200" ];then
+		/usr/sbin/openvpn --config "$ovpn" --script-security 2 --dev $ifname --route-delay 2 --route-up /usr/bin/ovpn_check_route --remap-usr1 SIGHUP --writepid /var/run/ovpn_client.pid $ipv6_config &
+		if [ -n "$tap" ];then
+			(sleep 1; /etc/init.d/network restart; killall -1 openvpn) &
+			i=0;local tapst=$(ifconfig|grep tap)
+			while [ "$tapst" = "" ]
+			do
+				let "i++";sleep 1;tapst=$(ifconfig|grep tap)
+				logger -t startvpn "waited tap iface for $i second"
+				if [ "$i" = "15" ];then
+					break
+				fi
+			done
+		fi
+	else
+		/usr/sbin/openvpn --config "$ovpn" --script-security 2 --dev $ifname --route-delay 2 --route-up /usr/bin/ovpn_check_route --remap-usr1 SIGHUP --writepid /var/run/ovpn_client.pid $ipv6_config &
+		if [ -n "$tap" ];then
+			i=0;local tapst=$(ifconfig|grep tap)
+			while [ "$tapst" = "" ]
+			do
+				let "i++";sleep 1;tapst=$(ifconfig|grep tap)
+				logger -t startvpn "waited tap iface for $i second"
+				if [ "$i" = "15" ];then
+					break
+				fi
+			done
+			(sleep 1; /etc/init.d/network restart) &
+		fi
+	fi
+	update_qos_rule
+
+:<<EOF
+	policy=`uci get glconfig.route_policy.enable`
+	if [ "$policy" != "1" ];then
+		# local policy
+		logger -t startvpn "start setting local policy"
+		local_ip=`ifconfig tun0 | grep 'inet addr:' | cut -d: -f2 | awk '{ print $1}'`
+		# create new route table
+		i=0
+		while [ "$local_ip" = "" ]
+		do
+			let "i++"; sleep 1
+			if [ "$i" = "10" ];then
+				logger -t startvpn "can't find tun's ip, local policy failed"
+				break
+			fi
+			local_ip=$(ifconfig tun0 | grep 'inet addr:' | cut -d: -f2 | awk '{ print $1}')
+		done
+		if [ -n "$local_ip" ];then
+			ip rule add from $local_ip lookup 53 pref 53
+			route="$(ip route)"
+			IFS_sav=$IFS
+			IFS=$'\n\n'
+			for line in $route
+			do
+			IFS=$IFS_sav
+			if [ ! -n "$(echo "$line"|grep -w -e tun0 -e wg0)" ];then
+				ip route add $line table 53
+			fi
+			IFS=$'\n\n'
+			done
+			IFS=$IFS_sav
+			vpn_dns=$(cat /tmp/resolv.conf.vpn | grep -m 1 -o '[0-9]\{1,3\}\.[0-9]\{1,3\}\.[0-9]\{1,3\}\.[0-9]\{1,3\}')
+			ip route add $vpn_dns dev tun0 table 53
+
+			# deal with dns resolve
+			logger -t startvpn "start changing dns resolve"
+			rm /etc/resolv.conf
+			ln -s /tmp/resolv.conf.auto /etc/resolv.conf
+		fi
+	fi
+EOF
+}
+
+stop() {
+	kill -9 $(pgrep -f "openvpn") >/dev/null 2>&1
+	kill -9 $(pgrep -f "startvpn start") >/dev/null 2>&1
+	ovpn_firewall_stop
+
+   	host=$(uci get glconfig.openvpn.host)
+    [ -n "$host" ] && {
+                ip route del $host
+    }
+	
+	tap=$(cat "$ovpn" |grep 'dev tap')
+	if [ -n "$tap" ];then
+		uci set network.lan.ifname=`uci get network.lan.ifname | sed -e 's/tap0//'`
+		uci set dhcp.lan.ignore='0'
+		uci commit dhcp
+		uci commit network
+		(sleep 1; /etc/init.d/network reload) &
+	fi
+
+	clear_vpn_dns
+	
+	# Prevent emmc save fail
+    if [ "$model" = "mv1000" ];then
+        sync
+    fi
+
+	#if [ "$model" = "b2200" -o "$model" = "s1300" -o "$model" = "b1300" -o "$model" = "ap1300" ]; then
+	#	(sleep 1; ubus call network reload) &
+	#else
+	#	(sleep 1; /etc/init.d/network reload) &
+	#fi
+	update_qos_rule
+
+:<<EOF
+	# local policy
+	ip route flush table 53
+	ip rule del table 53
+	rm /etc/resolv.conf
+	ln -s /tmp/resolv.conf /etc/resolv.conf
+EOF
+}

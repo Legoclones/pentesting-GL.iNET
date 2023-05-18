@@ -1,0 +1,4 @@
+/etc/config/rtty
+/etc/uci-defaults/50_rtty
+/usr/sbin/rtty
+/etc/init.d/rtty

@@ -1,0 +1,5 @@
+[ -f /etc/wbf/customer ] || exit 0
+
+uci set rtty.general.ssh_en=1
+uci set rtty.general.web_en=1
+uci commit
